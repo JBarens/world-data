@@ -17,4 +17,5 @@ class CountryData(Base):
     gini = Column(Float, nullable=True)
     # everything else lives here until needed
     indicators = Column(JSON, nullable=True)
+    briefing = Column(JSON, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow)

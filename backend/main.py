@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from pydantic_ai import Agent
+import os
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, get_db
@@ -8,9 +9,10 @@ from models import Base, CountryData
 
 app = FastAPI()
 
+_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174"],
+    allow_origins=_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -68,8 +70,11 @@ def get_country_briefing(iso_alpha3: str, db: Session = Depends(get_db)):
         "gini": country.gini,
     }
 
-    context = str(country_data)
+    if country.briefing:
+        return country.briefing
 
-    # Use the agent to generate a briefing
+    context = str(country_data)
     briefing = agent.run_sync(context)
+    country.briefing = briefing.output.model_dump()
+    db.commit()
     return briefing.output

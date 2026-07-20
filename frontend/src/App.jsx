@@ -3,6 +3,7 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
+const API = import.meta.env.VITE_API_URL ?? "http://localhost:8001";
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
@@ -918,7 +919,7 @@ export default function App() {
       return;
     }
     setBriefing(null);
-    fetch(`http://localhost:8001/countries/${focusedCountry}/briefing`)
+    fetch(`${API}/countries/${focusedCountry}/briefing`)
       .then((r) => r.json())
       .then((b) => { briefingCacheRef.current[focusedCountry] = b; setBriefing(b); })
       .catch(() =>
@@ -975,7 +976,7 @@ export default function App() {
     mapInstance.current = map;
     map.addControl(new mapboxgl.NavigationControl(), "top-right");
 
-    fetch("http://localhost:8001/countries")
+    fetch(`${API}/countries`)
       .then((r) => r.json())
       .then((data) => {
         data.forEach((c) => (countryDataRef.current[c.iso_alpha3] = c));
