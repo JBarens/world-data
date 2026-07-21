@@ -35,6 +35,9 @@ const METRICS = {
 };
 
 const NO_DATA_COLOR = "#5a5a6a";
+// Mapbox country-boundaries-v1 has duplicate features per worldview (US, CN, IN…).
+// Without this filter Russia/China render multiple overlapping features and appear dark.
+const WORLDVIEW = ["match", ["get", "worldview"], ["all", "US"], true, false];
 const MAX_COMPARE = 2;
 const ADMIN1_ZOOM = 4; // province tier (global)
 const FOCUSED_PROV_ZOOM = 2; // province tier (when country focused)
@@ -467,11 +470,8 @@ function Panel({
               <StatRow label="Type" value={selected.typeLabel} />
               {selected.code && <StatRow label="Code" value={selected.code} />}
             </Section>
-            <Section title="Country-level stats">
+            <Section title="Statistics">
               <MetricRows data={selected.countryData} />
-              <div style={{ marginTop: 8, fontSize: 11, color: "#444" }}>
-                {isMunicipality ? "County" : "Regional"} statistics coming soon
-              </div>
             </Section>
           </>
         )}
@@ -797,6 +797,7 @@ export default function App() {
         "all",
         ["!=", ["get", "iso_3166_1_alpha_3"], focusedCountry],
         ["!=", ["get", "iso_3166_1_alpha_3"], "ATA"],
+        WORLDVIEW,
       ]);
       map.setPaintProperty("world-dim", "fill-opacity", 0.55);
       map.setFilter("admin1-focus-lines", [
@@ -996,7 +997,7 @@ export default function App() {
         type: "fill",
         source: "countries",
         "source-layer": "country_boundaries",
-        filter: ["!=", ["get", "iso_3166_1_alpha_3"], "ATA"],
+        filter: ["all", ["!=", ["get", "iso_3166_1_alpha_3"], "ATA"], WORLDVIEW],
         paint: { "fill-color": "#444", "fill-opacity": 0.75 },
       });
 
@@ -1024,7 +1025,7 @@ export default function App() {
         type: "fill",
         source: "countries",
         "source-layer": "country_boundaries",
-        filter: ["!=", ["get", "iso_3166_1_alpha_3"], "ATA"],
+        filter: ["all", ["!=", ["get", "iso_3166_1_alpha_3"], "ATA"], WORLDVIEW],
         paint: {
           "fill-color": "#ffffff",
           "fill-opacity": [
@@ -1049,7 +1050,7 @@ export default function App() {
         type: "line",
         source: "countries",
         "source-layer": "country_boundaries",
-        filter: ["!=", ["get", "iso_3166_1_alpha_3"], "ATA"],
+        filter: ["all", ["!=", ["get", "iso_3166_1_alpha_3"], "ATA"], WORLDVIEW],
         paint: {
           "line-color": "#ffffff",
           "line-width": ["interpolate", ["linear"], ["zoom"], 1, 0.5, 6, 1.5],
