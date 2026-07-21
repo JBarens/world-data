@@ -19,6 +19,7 @@ const METRICS = {
     domain: [100000, 1.4e9],
     colors: ["#deebf7", "#08519c"],
     format: (v) => Math.round(v).toLocaleString(),
+    log: true,
   },
   gini: {
     label: "Gini",
@@ -35,9 +36,6 @@ const METRICS = {
 };
 
 const NO_DATA_COLOR = "#5a5a6a";
-// Mapbox country-boundaries-v1 has duplicate features per worldview (US, CN, IN…).
-// Without this filter Russia/China render multiple overlapping features and appear dark.
-const WORLDVIEW = ["match", ["get", "worldview"], ["all", "US"], true, false];
 const MAX_COMPARE = 2;
 const ADMIN1_ZOOM = 4; // province tier (global)
 const FOCUSED_PROV_ZOOM = 2; // province tier (when country focused)
@@ -49,12 +47,12 @@ function lerp(a, b, t) {
   return Math.round(a + (b - a) * t);
 }
 
-function metricColor(value, domain, colors) {
+function metricColor(value, domain, colors, log = false) {
   if (value == null) return NO_DATA_COLOR;
-  const t = Math.min(
-    1,
-    Math.max(0, (value - domain[0]) / (domain[1] - domain[0])),
-  );
+  const v = log ? Math.log10(Math.max(1, value)) : value;
+  const d0 = log ? Math.log10(domain[0]) : domain[0];
+  const d1 = log ? Math.log10(domain[1]) : domain[1];
+  const t = Math.min(1, Math.max(0, (v - d0) / (d1 - d0)));
   const c0 = parseInt(colors[0].slice(1), 16);
   const c1 = parseInt(colors[1].slice(1), 16);
   const r = lerp((c0 >> 16) & 0xff, (c1 >> 16) & 0xff, t);
@@ -64,10 +62,10 @@ function metricColor(value, domain, colors) {
 }
 
 function buildMatchExpression(countryData, metric) {
-  const { domain, colors } = METRICS[metric];
+  const { domain, colors, log } = METRICS[metric];
   const expr = ["match", ["get", "iso_3166_1_alpha_3"]];
   for (const [iso, c] of Object.entries(countryData))
-    expr.push(iso, metricColor(c[metric], domain, colors));
+    expr.push(iso, metricColor(c[metric], domain, colors, log));
   expr.push("#444");
   return expr;
 }
@@ -120,13 +118,13 @@ async function fitToCountry(name, map) {
 // ─── ui components ────────────────────────────────────────────────────────────
 
 function StatBar({ value, metric }) {
-  const { domain, colors } = METRICS[metric];
+  const { domain, colors, log } = METRICS[metric];
   if (value == null) return null;
-  const pct = Math.min(
-    100,
-    Math.max(0, ((value - domain[0]) / (domain[1] - domain[0])) * 100),
-  );
-  const color = metricColor(value, domain, colors);
+  const color = metricColor(value, domain, colors, log);
+  const v = log ? Math.log10(Math.max(1, value)) : value;
+  const d0 = log ? Math.log10(domain[0]) : domain[0];
+  const d1 = log ? Math.log10(domain[1]) : domain[1];
+  const pct = Math.min(100, Math.max(0, ((v - d0) / (d1 - d0)) * 100));
   return (
     <div
       style={{
@@ -299,6 +297,7 @@ function Panel({
   regionCompared,
   focusedCountry,
   briefing,
+  provinceBriefing,
   onClose,
   onPop,
   onAddCompare,
@@ -472,6 +471,35 @@ function Panel({
             </Section>
             <Section title="Statistics">
               <MetricRows data={selected.countryData} />
+              <div style={{ fontSize: 10, color: "#444", marginTop: 4 }}>Country-level · province data not yet available</div>
+            </Section>
+
+            <Section title="AI Briefing">
+              {!provinceBriefing ? (
+                <div style={{ fontSize: 12, color: "#555" }}>Loading briefing…</div>
+              ) : (
+                <>
+                  {provinceBriefing.risk_level != null && (
+                    <div style={{ fontSize: 12, color: "#888", marginBottom: 8 }}>
+                      Risk level:{" "}
+                      <span style={{
+                        color: provinceBriefing.risk_level <= 2 ? "#31a354" : provinceBriefing.risk_level <= 3 ? "#f0a500" : "#a50f15",
+                        fontWeight: 600,
+                      }}>
+                        {["", "Low", "Low-Medium", "Medium", "Medium-High", "High"][provinceBriefing.risk_level] ?? provinceBriefing.risk_level}
+                      </span>
+                    </div>
+                  )}
+                  <div style={{ fontSize: 12, color: "#aaa", lineHeight: 1.6, marginBottom: 10 }}>
+                    {provinceBriefing.summary}
+                  </div>
+                  {provinceBriefing.key_factors?.length > 0 && (
+                    <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: "#777", lineHeight: 1.7 }}>
+                      {provinceBriefing.key_factors.map((f, i) => <li key={i}>{f}</li>)}
+                    </ul>
+                  )}
+                </>
+              )}
             </Section>
           </>
         )}
@@ -743,6 +771,7 @@ export default function App() {
   const focusedCountryRef = useRef(null);
   const focusedProvinceRef = useRef(null);
   const briefingCacheRef = useRef({});
+  const provinceBriefingCacheRef = useRef({});
 
   const [metric, setMetric] = useState("gdp_per_capita");
   const [selectedStack, setSelectedStack] = useState([]);
@@ -751,6 +780,7 @@ export default function App() {
   const [focusedCountry, setFocusedCountry] = useState(null);
   const [focusedProvince, setFocusedProvince] = useState(null);
   const [briefing, setBriefing] = useState(null);
+  const [provinceBriefing, setProvinceBriefing] = useState(null);
 
   const selected = selectedStack[selectedStack.length - 1] ?? null;
   const pushSel = useCallback(
@@ -797,7 +827,6 @@ export default function App() {
         "all",
         ["!=", ["get", "iso_3166_1_alpha_3"], focusedCountry],
         ["!=", ["get", "iso_3166_1_alpha_3"], "ATA"],
-        WORLDVIEW,
       ]);
       map.setPaintProperty("world-dim", "fill-opacity", 0.55);
       map.setFilter("admin1-focus-lines", [
@@ -932,6 +961,18 @@ export default function App() {
       );
   }, [focusedCountry]);
 
+  // fetch province briefing when a region is selected
+  useEffect(() => {
+    if (selected?.type !== "region" || !selected.adm1_code) { setProvinceBriefing(null); return; }
+    const key = selected.adm1_code;
+    if (provinceBriefingCacheRef.current[key]) { setProvinceBriefing(provinceBriefingCacheRef.current[key]); return; }
+    setProvinceBriefing(null);
+    fetch(`${API}/provinces/${selected.adm0_a3}/${encodeURIComponent(key)}/briefing?name=${encodeURIComponent(selected.name)}`)
+      .then((r) => r.json())
+      .then((b) => { provinceBriefingCacheRef.current[key] = b; setProvinceBriefing(b); })
+      .catch(() => setProvinceBriefing({ summary: "Briefing unavailable.", key_factors: [], risk_level: null }));
+  }, [selected?.adm1_code]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // update risk overlay when briefing arrives
   useEffect(() => {
     if (!mapLoaded.current) return;
@@ -997,7 +1038,7 @@ export default function App() {
         type: "fill",
         source: "countries",
         "source-layer": "country_boundaries",
-        filter: ["all", ["!=", ["get", "iso_3166_1_alpha_3"], "ATA"], WORLDVIEW],
+        filter: ["!=", ["get", "iso_3166_1_alpha_3"], "ATA"],
         paint: { "fill-color": "#444", "fill-opacity": 0.75 },
       });
 
@@ -1025,23 +1066,10 @@ export default function App() {
         type: "fill",
         source: "countries",
         "source-layer": "country_boundaries",
-        filter: ["all", ["!=", ["get", "iso_3166_1_alpha_3"], "ATA"], WORLDVIEW],
+        filter: ["!=", ["get", "iso_3166_1_alpha_3"], "ATA"],
         paint: {
           "fill-color": "#ffffff",
-          "fill-opacity": [
-            "case",
-            ["boolean", ["feature-state", "hover"], false],
-            [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
-              ADMIN1_ZOOM - 0.5,
-              0.28,
-              ADMIN1_ZOOM + 0.2,
-              0,
-            ],
-            0,
-          ],
+          "fill-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 0.25, 0],
         },
       });
 
@@ -1050,7 +1078,7 @@ export default function App() {
         type: "line",
         source: "countries",
         "source-layer": "country_boundaries",
-        filter: ["all", ["!=", ["get", "iso_3166_1_alpha_3"], "ATA"], WORLDVIEW],
+        filter: ["!=", ["get", "iso_3166_1_alpha_3"], "ATA"],
         paint: {
           "line-color": "#ffffff",
           "line-width": ["interpolate", ["linear"], ["zoom"], 1, 0.5, 6, 1.5],
@@ -1430,6 +1458,7 @@ export default function App() {
         const a2 = a2Feats[0];
         if (a2 && zoom >= ADMIN2_ZOOM) {
           const p = a2.properties;
+          map.fitBounds(bboxFromGeometry(a2.geometry), { padding: 40, duration: 900, maxZoom: 12 });
           pushSel({
             type: "municipality",
             id: p.ne_id || p.fips || p.name,
@@ -1470,6 +1499,8 @@ export default function App() {
               typeLabel: p.type_en || "Region",
               parentName: p.admin,
               code: p.iso_3166_2,
+              adm1_code: p.adm1_code,
+              adm0_a3: p.adm0_a3,
               countryData: countryDataRef.current[p.adm0_a3],
             });
             return;
@@ -1657,6 +1688,7 @@ export default function App() {
         regionCompared={regionCompared}
         focusedCountry={focusedCountry}
         briefing={briefing}
+        provinceBriefing={provinceBriefing}
         onClose={clearFocus}
         onPop={popSel}
         onAddCompare={addCompare}

@@ -19,3 +19,12 @@ class CountryData(Base):
     indicators = Column(JSON, nullable=True)
     briefing = Column(JSON, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ProvinceBriefingCache(Base):
+    __tablename__ = "province_briefings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    adm1_code = Column(String, unique=True, index=True)
+    adm0_a3 = Column(String, index=True)
+    briefing = Column(JSON)
