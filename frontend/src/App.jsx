@@ -66,7 +66,16 @@ function buildMatchExpression(countryData, metric) {
   const expr = ["match", ["get", "iso_3166_1_alpha_3"]];
   for (const [iso, c] of Object.entries(countryData))
     expr.push(iso, metricColor(c[metric], domain, colors, log));
-  expr.push("#444");
+  expr.push(NO_DATA_COLOR);
+  return expr;
+}
+
+function buildAdmin1MatchExpression(countryData, metric) {
+  const { domain, colors, log } = METRICS[metric];
+  const expr = ["match", ["get", "adm0_a3"]];
+  for (const [iso, c] of Object.entries(countryData))
+    expr.push(iso, metricColor(c[metric], domain, colors, log));
+  expr.push(NO_DATA_COLOR);
   return expr;
 }
 
@@ -298,6 +307,7 @@ function Panel({
   focusedCountry,
   briefing,
   provinceBriefing,
+  countryDataMap,
   onClose,
   onPop,
   onAddCompare,
@@ -470,7 +480,7 @@ function Panel({
               {selected.code && <StatRow label="Code" value={selected.code} />}
             </Section>
             <Section title="Statistics">
-              <MetricRows data={selected.countryData} />
+              <MetricRows data={selected.countryData ?? countryDataMap?.[selected.adm0_a3]} />
               <div style={{ fontSize: 10, color: "#444", marginTop: 4 }}>Country-level · province data not yet available</div>
             </Section>
 
@@ -774,6 +784,7 @@ export default function App() {
   const provinceBriefingCacheRef = useRef({});
 
   const [metric, setMetric] = useState("gdp_per_capita");
+  const [countryDataMap, setCountryDataMap] = useState({});
   const [selectedStack, setSelectedStack] = useState([]);
   const [compared, setCompared] = useState([]);
   const [regionCompared, setRegionCompared] = useState([]);
@@ -798,6 +809,11 @@ export default function App() {
       "country-fills",
       "fill-color",
       buildMatchExpression(countryDataRef.current, m),
+    );
+    mapInstance.current.setPaintProperty(
+      "admin1-fills",
+      "fill-color",
+      buildAdmin1MatchExpression(countryDataRef.current, m),
     );
   }, []);
 
@@ -860,16 +876,8 @@ export default function App() {
       map.setPaintProperty("admin1-fills", "fill-opacity", [
         "case",
         ["==", ["get", "adm0_a3"], focusedCountry],
-        0.001, // always hittable for focused country (Vatican, Monaco etc)
-        [
-          "interpolate",
-          ["linear"],
-          ["zoom"],
-          ADMIN1_ZOOM - 0.5,
-          0,
-          ADMIN1_ZOOM + 0.5,
-          0.001,
-        ],
+        0.65, // focused country provinces colored + hittable
+        0,    // hide other countries' provinces (world-dim handles visual dimming of country-fills)
       ]);
     } else {
       map.setPaintProperty("world-dim", "fill-opacity", 0);
@@ -893,13 +901,7 @@ export default function App() {
         0.5,
       ]);
       map.setPaintProperty("admin1-fills", "fill-opacity", [
-        "interpolate",
-        ["linear"],
-        ["zoom"],
-        ADMIN1_ZOOM - 0.5,
-        0,
-        ADMIN1_ZOOM + 0.5,
-        0.001,
+        "interpolate", ["linear"], ["zoom"], ADMIN1_ZOOM - 0.5, 0, ADMIN1_ZOOM + 0.5, 0.65,
       ]);
     }
   }, [focusedCountry]);
@@ -1022,6 +1024,7 @@ export default function App() {
       .then((r) => r.json())
       .then((data) => {
         data.forEach((c) => (countryDataRef.current[c.iso_alpha3] = c));
+        setCountryDataMap({ ...countryDataRef.current });
         applyMetric(metric);
       })
       .catch((err) => console.error("fetch failed:", err));
@@ -1039,7 +1042,10 @@ export default function App() {
         source: "countries",
         "source-layer": "country_boundaries",
         filter: ["!=", ["get", "iso_3166_1_alpha_3"], "ATA"],
-        paint: { "fill-color": "#444", "fill-opacity": 0.75 },
+        paint: {
+          "fill-color": "#444",
+          "fill-opacity": ["interpolate", ["linear"], ["zoom"], ADMIN1_ZOOM - 0.5, 0.78, ADMIN1_ZOOM + 1, 0.2],
+        },
       });
 
       map.addLayer({
@@ -1098,16 +1104,8 @@ export default function App() {
         type: "fill",
         source: "admin1",
         paint: {
-          "fill-color": "#ffffff",
-          "fill-opacity": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            ADMIN1_ZOOM - 0.5,
-            0,
-            ADMIN1_ZOOM + 0.5,
-            0.001,
-          ],
+          "fill-color": NO_DATA_COLOR,
+          "fill-opacity": ["interpolate", ["linear"], ["zoom"], ADMIN1_ZOOM - 0.5, 0, ADMIN1_ZOOM + 0.5, 0.65],
         },
       });
 
@@ -1689,6 +1687,7 @@ export default function App() {
         focusedCountry={focusedCountry}
         briefing={briefing}
         provinceBriefing={provinceBriefing}
+        countryDataMap={countryDataMap}
         onClose={clearFocus}
         onPop={popSel}
         onAddCompare={addCompare}

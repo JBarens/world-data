@@ -22,7 +22,11 @@ def run():
     gdp = fetch_indicator(INDICATORS["gdp_per_capita"])
     pop = fetch_indicator(INDICATORS["population"])
     gini = fetch_indicator(INDICATORS["gini"])
-    hdi = fetch_indicator(INDICATORS["hdi"])
+    try:
+        hdi = fetch_indicator(INDICATORS["hdi"])
+    except Exception as e:
+        print(f"HDI fetch failed ({e}), skipping")
+        hdi = {}
 
     # fetch country list for iso_numeric + name
     r = httpx.get("https://api.worldbank.org/v2/country?format=json&per_page=300", timeout=30)
