@@ -2,7 +2,8 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from pydantic_ai import Agent
 import os
-from fastapi import FastAPI, Depends
+import re
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, get_db
 from models import Base, CountryData, ProvinceBriefingCache
@@ -96,17 +97,29 @@ def get_country_briefing(iso_alpha3: str, db: Session = Depends(get_db)):
 
 @app.get("/provinces/{adm0_a3}/{adm1_code}/briefing")
 def get_province_briefing(adm0_a3: str, adm1_code: str, name: str = "", db: Session = Depends(get_db)):
-    cached = db.query(ProvinceBriefingCache).filter_by(adm1_code=adm1_code).first()
+    # Validate country exists — rejects arbitrary adm0_a3 values
+    country = db.query(CountryData).filter_by(iso_alpha3=adm0_a3).first()
+    if not country:
+        raise HTTPException(status_code=404, detail="Country not found")
+
+    # Cache keyed on both country + province so adm1_codes from different countries don't collide
+    cache_key = f"{adm0_a3}:{adm1_code}"
+    cached = db.query(ProvinceBriefingCache).filter_by(adm1_code=cache_key).first()
     if cached:
         return cached.briefing
 
-    country = db.query(CountryData).filter_by(iso_alpha3=adm0_a3).first()
-    country_name = country.name if country else adm0_a3
-    gdp = country.gdp_per_capita if country else None
-    context = f"Province/State: {name or adm1_code} in {country_name}. Country GDP/cap: ${gdp:,.0f}" if gdp else f"Province/State: {name or adm1_code} in {country_name}."
+    # Strip anything that isn't a letter, number, space, hyphen, or apostrophe to block prompt injection
+    safe_name = re.sub(r"[^\w\s\-']", "", name)[:80] or adm1_code[:40]
+
+    gdp = country.gdp_per_capita
+    context = (
+        f"Province/State: {safe_name} in {country.name}. Country GDP/cap: ${gdp:,.0f}."
+        if gdp else
+        f"Province/State: {safe_name} in {country.name}."
+    )
 
     briefing = province_agent.run_sync(context)
-    record = ProvinceBriefingCache(adm1_code=adm1_code, adm0_a3=adm0_a3, briefing=briefing.output.model_dump())
+    record = ProvinceBriefingCache(adm1_code=cache_key, adm0_a3=adm0_a3, briefing=briefing.output.model_dump())
     db.add(record)
     db.commit()
     return briefing.output
