@@ -13,7 +13,7 @@ INDICATORS = {
 
 def fetch_indicator(indicator_code: str) -> dict:
     url = f"https://api.worldbank.org/v2/country/all/indicator/{indicator_code}?format=json&per_page=300&mrv=1"
-    r = httpx.get(url, timeout=30)
+    r = httpx.get(url, timeout=60)
     data = r.json()
     return {item["countryiso3code"]: item["value"] for item in data[1] if item["value"] is not None}
 
