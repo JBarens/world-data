@@ -11,17 +11,22 @@ INDICATORS = {
 }
 
 
-def fetch_indicator(indicator_code: str) -> dict:
-    url = f"https://api.worldbank.org/v2/country/all/indicator/{indicator_code}?format=json&per_page=300&mrv=1"
+def fetch_indicator(indicator_code: str, mrv: int = 1) -> dict:
+    url = f"https://api.worldbank.org/v2/country/all/indicator/{indicator_code}?format=json&per_page=300&mrv={mrv}"
     r = httpx.get(url, timeout=60)
     data = r.json()
-    return {item["countryiso3code"]: item["value"] for item in data[1] if item["value"] is not None}
+    # World Bank returns most-recent-first; keep first non-null per country
+    result = {}
+    for item in data[1]:
+        if item["value"] is not None and item["countryiso3code"] not in result:
+            result[item["countryiso3code"]] = item["value"]
+    return result
 
 
 def run():
     gdp = fetch_indicator(INDICATORS["gdp_per_capita"])
     pop = fetch_indicator(INDICATORS["population"])
-    gini = fetch_indicator(INDICATORS["gini"])
+    gini = fetch_indicator(INDICATORS["gini"], mrv=5)  # look back 5 years for coverage
     try:
         hdi = fetch_indicator(INDICATORS["hdi"])
     except Exception as e:

@@ -70,12 +70,22 @@ function buildMatchExpression(countryData, metric) {
   return expr;
 }
 
-function buildAdmin1MatchExpression(countryData, metric) {
+function buildAdmin1MatchExpression(countryData, provinceData, metric) {
   const { domain, colors, log } = METRICS[metric];
-  const expr = ["match", ["get", "adm0_a3"]];
+  // Country-level fallback for all provinces without specific data
+  const countryExpr = ["match", ["get", "adm0_a3"]];
   for (const [iso, c] of Object.entries(countryData))
-    expr.push(iso, metricColor(c[metric], domain, colors, log));
-  expr.push(NO_DATA_COLOR);
+    countryExpr.push(iso, metricColor(c[metric], domain, colors, log));
+  countryExpr.push(NO_DATA_COLOR);
+
+  const provEntries = Object.entries(provinceData).filter(([, p]) => p[metric] != null);
+  if (!provEntries.length) return countryExpr;
+
+  // Province-level outer match, country-level inner fallback
+  const expr = ["match", ["get", "adm1_code"]];
+  for (const [code, p] of provEntries)
+    expr.push(code, metricColor(p[metric], domain, colors, log));
+  expr.push(countryExpr);
   return expr;
 }
 
@@ -480,8 +490,10 @@ function Panel({
               {selected.code && <StatRow label="Code" value={selected.code} />}
             </Section>
             <Section title="Statistics">
-              <MetricRows data={selected.countryData ?? countryDataMap?.[selected.adm0_a3]} />
-              <div style={{ fontSize: 10, color: "#444", marginTop: 4 }}>Country-level · province data not yet available</div>
+              <MetricRows data={selected.provinceData ?? selected.countryData ?? countryDataMap?.[selected.adm0_a3]} />
+              <div style={{ fontSize: 10, color: "#444", marginTop: 4 }}>
+                {selected.provinceData ? "BEA 2022 · State-level" : "World Bank · Country-level"}
+              </div>
             </Section>
 
             <Section title="AI Briefing">
@@ -678,6 +690,9 @@ function Panel({
           onRemove={onRemoveRegionCompare}
           referenceData={isSubregion ? selected.countryData : null}
         />
+        <div style={{ fontSize: 10, color: "#333", marginTop: 16, textAlign: "right" }}>
+          Sources: World Bank · BEA · UNDP
+        </div>
       </div>
     </div>
   );
@@ -782,6 +797,7 @@ export default function App() {
   const focusedProvinceRef = useRef(null);
   const briefingCacheRef = useRef({});
   const provinceBriefingCacheRef = useRef({});
+  const provinceDataRef = useRef({});
 
   const [metric, setMetric] = useState("gdp_per_capita");
   const [countryDataMap, setCountryDataMap] = useState({});
@@ -813,7 +829,7 @@ export default function App() {
     mapInstance.current.setPaintProperty(
       "admin1-fills",
       "fill-color",
-      buildAdmin1MatchExpression(countryDataRef.current, m),
+      buildAdmin1MatchExpression(countryDataRef.current, provinceDataRef.current, m),
     );
   }, []);
 
@@ -1028,6 +1044,14 @@ export default function App() {
         applyMetric(metric);
       })
       .catch((err) => console.error("fetch failed:", err));
+
+    fetch("/province-stats.json")
+      .then((r) => r.json())
+      .then((data) => {
+        provinceDataRef.current = data;
+        applyMetric(metric);
+      })
+      .catch(() => {});
 
     map.on("load", () => {
       // ── country ────────────────────────────────────────────────────────────
@@ -1456,7 +1480,17 @@ export default function App() {
         const a2 = a2Feats[0];
         if (a2 && zoom >= ADMIN2_ZOOM) {
           const p = a2.properties;
-          map.fitBounds(bboxFromGeometry(a2.geometry), { padding: 40, duration: 900, maxZoom: 12 });
+          // Check if county is in a different state than the currently focused one
+          const stateF = map.queryRenderedFeatures(e.point, { layers: ["admin1-fills"] })[0];
+          const currentProv = focusedProvinceRef.current;
+          const sameState = stateF && currentProv && stateF.properties.adm1_code === currentProv.adm1_code;
+          if (stateF && !sameState) {
+            const sp = stateF.properties;
+            setFocusedProvince({ adm1_code: sp.adm1_code, name: sp.name_en || sp.name, adm0_a3: sp.adm0_a3 });
+            map.fitBounds(bboxFromGeometry(stateF.geometry), { padding: 60, duration: 900, maxZoom: 10 });
+          } else {
+            map.fitBounds(bboxFromGeometry(a2.geometry), { padding: 40, duration: 900, maxZoom: 12 });
+          }
           pushSel({
             type: "municipality",
             id: p.ne_id || p.fips || p.name,
@@ -1500,6 +1534,7 @@ export default function App() {
               adm1_code: p.adm1_code,
               adm0_a3: p.adm0_a3,
               countryData: countryDataRef.current[p.adm0_a3],
+              provinceData: provinceDataRef.current[p.adm1_code],
             });
             return;
           }
