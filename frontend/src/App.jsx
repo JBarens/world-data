@@ -39,7 +39,7 @@ const METRICS = {
     label: "Population", group: "Social",
     domain: [100000, 1.4e9], colors: ["#deebf7", "#08519c"],
     format: (v) => Math.round(v).toLocaleString(),
-    log: true,
+    log: true, absolute: true,
   },
   life_expectancy: {
     label: "Life Expectancy", group: "Social",
@@ -579,14 +579,30 @@ function Panel({
               <StatRow label="Type" value={selected.typeLabel} />
               {selected.code && <StatRow label="Code" value={selected.code} />}
             </Section>
-            <Section title="Statistics">
-              <MetricRows data={selected.provinceData ?? selected.countryData ?? countryDataMap?.[selected.adm0_a3]} />
-              <div style={{ fontSize: 10, color: "#444", marginTop: 4 }}>
-                {selected.provinceData
-                  ? isMunicipality ? "Census 2022 · County-level" : "BEA 2022 · State-level"
-                  : "World Bank · Country-level"}
-              </div>
-            </Section>
+            {(() => {
+              const countryFallback = selected.countryData ?? countryDataMap?.[selected.adm0_a3];
+              const prov = selected.provinceData;
+              // Build merged: province values win; country values only for rate/index metrics, never absolute
+              const merged = Object.fromEntries(
+                Object.keys(METRICS).map((key) => {
+                  const provVal = prov?.[key];
+                  const countryVal = countryFallback?.[key];
+                  // Only fall back to country for per-capita/rate metrics, not totals (population)
+                  const absolute = METRICS[key].absolute;
+                  return [key, provVal ?? (absolute ? undefined : countryVal)];
+                })
+              );
+              const hasProvData = prov && Object.values(prov).some((v) => v != null);
+              const sourceLabel = hasProvData
+                ? isMunicipality ? "Census 2022 · County-level" : "Subnational sources · State/Province-level"
+                : "World Bank · Country-level";
+              return (
+                <Section title="Statistics">
+                  <MetricRows data={merged} />
+                  <div style={{ fontSize: 10, color: "#444", marginTop: 4 }}>{sourceLabel}</div>
+                </Section>
+              );
+            })()}
 
             <Section title="AI Briefing">
               {!provinceBriefing ? (
@@ -1219,6 +1235,8 @@ export default function App() {
         type: "geojson",
         data: "/admin1-global.geojson",
         generateId: true,
+        tolerance: 0.1,
+        buffer: 4,
       });
 
       map.addLayer({
@@ -1263,7 +1281,7 @@ export default function App() {
           "line-color": "rgba(255,255,255,0.45)",
           "line-width": ["interpolate", ["linear"], ["zoom"], ADMIN1_ZOOM, 0.5, 8, 1.5, 12, 2],
           "line-opacity": ["interpolate", ["linear"], ["zoom"], ADMIN1_ZOOM - 0.5, 0, ADMIN1_ZOOM + 0.5, 0.6],
-          "line-blur": 0.4,
+          "line-blur": 1,
         },
       });
 
@@ -1296,6 +1314,8 @@ export default function App() {
         type: "geojson",
         data: "/admin2-us.geojson",
         generateId: true,
+        tolerance: 0.1,
+        buffer: 4,
       });
 
       map.addLayer({
