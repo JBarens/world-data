@@ -65,6 +65,7 @@ def get_countries(db: Session = Depends(get_db)):
             "population": c.population,
             "gini": c.gini,
             "hdi": c.hdi,
+            **(c.indicators or {}),
         }
         for c in countries
     ]

@@ -8,30 +8,111 @@ const API = import.meta.env.VITE_API_URL ?? "http://localhost:8001";
 // ─── constants ────────────────────────────────────────────────────────────────
 
 const METRICS = {
+  // ── Economic ──────────────────────────────────────────────────────
   gdp_per_capita: {
-    label: "GDP/cap",
-    domain: [500, 80000],
-    colors: ["#f7fcb9", "#31a354"],
+    label: "GDP / Capita", group: "Economic",
+    domain: [500, 80000], colors: ["#f7fcb9", "#31a354"],
     format: (v) => "$" + Math.round(v).toLocaleString(),
   },
+  gini: {
+    label: "Gini Coefficient", group: "Economic",
+    domain: [25, 65], colors: ["#fee5d9", "#a50f15"],
+    format: (v) => v.toFixed(1),
+  },
+  inflation: {
+    label: "Inflation %", group: "Economic",
+    domain: [-2, 30], colors: ["#deebf7", "#a50f15"],
+    format: (v) => v.toFixed(1) + "%",
+  },
+  trade_pct: {
+    label: "Trade % of GDP", group: "Economic",
+    domain: [20, 200], colors: ["#edf8e9", "#005a32"],
+    format: (v) => v.toFixed(1) + "%",
+  },
+  fdi_pct: {
+    label: "FDI % of GDP", group: "Economic",
+    domain: [-2, 20], colors: ["#e0ecf4", "#006d2c"],
+    format: (v) => v.toFixed(2) + "%",
+  },
+  // ── Social ────────────────────────────────────────────────────────
   population: {
-    label: "Population",
-    domain: [100000, 1.4e9],
-    colors: ["#deebf7", "#08519c"],
+    label: "Population", group: "Social",
+    domain: [100000, 1.4e9], colors: ["#deebf7", "#08519c"],
     format: (v) => Math.round(v).toLocaleString(),
     log: true,
   },
-  gini: {
-    label: "Gini",
-    domain: [25, 65],
-    colors: ["#fee5d9", "#a50f15"],
-    format: (v) => v.toFixed(1),
+  life_expectancy: {
+    label: "Life Expectancy", group: "Social",
+    domain: [50, 85], colors: ["#fff7bc", "#d95f0e"],
+    format: (v) => v.toFixed(1) + " yrs",
   },
   hdi: {
-    label: "HDI",
-    domain: [0.4, 0.95],
-    colors: ["#ffeda0", "#006837"],
+    label: "HDI", group: "Social",
+    domain: [0.4, 0.95], colors: ["#ffeda0", "#006837"],
     format: (v) => v.toFixed(3),
+  },
+  fertility_rate: {
+    label: "Fertility Rate", group: "Social",
+    domain: [1, 7], colors: ["#fef0d9", "#b30000"],
+    format: (v) => v.toFixed(2),
+  },
+  urban_pct: {
+    label: "Urban Population %", group: "Social",
+    domain: [10, 100], colors: ["#f2f0f7", "#54278f"],
+    format: (v) => v.toFixed(1) + "%",
+  },
+  mortality_u5: {
+    label: "Child Mortality ‰", group: "Social",
+    domain: [2, 120], colors: ["#fff5f0", "#67000d"],
+    format: (v) => v.toFixed(1),
+  },
+  unemployment: {
+    label: "Unemployment %", group: "Social",
+    domain: [1, 30], colors: ["#f0f9e8", "#084081"],
+    format: (v) => v.toFixed(1) + "%",
+  },
+  internet_users_pct: {
+    label: "Internet Users %", group: "Social",
+    domain: [5, 100], colors: ["#eff3ff", "#08519c"],
+    format: (v) => v.toFixed(1) + "%",
+  },
+  // ── Infrastructure ────────────────────────────────────────────────
+  health_exp_pct: {
+    label: "Health Exp % GDP", group: "Infrastructure",
+    domain: [2, 18], colors: ["#f7fbff", "#08306b"],
+    format: (v) => v.toFixed(1) + "%",
+  },
+  education_exp_pct: {
+    label: "Education Exp % GDP", group: "Infrastructure",
+    domain: [1, 10], colors: ["#f7fbff", "#2171b5"],
+    format: (v) => v.toFixed(1) + "%",
+  },
+  electricity_access: {
+    label: "Electricity Access %", group: "Infrastructure",
+    domain: [30, 100], colors: ["#fff7bc", "#fd8d3c"],
+    format: (v) => v.toFixed(1) + "%",
+  },
+  military_exp_pct: {
+    label: "Military Exp % GDP", group: "Infrastructure",
+    domain: [0.5, 8], colors: ["#fff5eb", "#7f2704"],
+    format: (v) => v.toFixed(2) + "%",
+  },
+  // ── Environment ───────────────────────────────────────────────────
+  co2_per_capita: {
+    label: "CO₂ / Capita (t)", group: "Environment",
+    domain: [0.1, 20], colors: ["#e5f5e0", "#a50f15"],
+    format: (v) => v.toFixed(1) + " t",
+    log: true,
+  },
+  forest_pct: {
+    label: "Forest Coverage %", group: "Environment",
+    domain: [1, 90], colors: ["#f7fcf5", "#005a32"],
+    format: (v) => v.toFixed(1) + "%",
+  },
+  renewable_pct: {
+    label: "Renewable Energy %", group: "Environment",
+    domain: [5, 100], colors: ["#f7fcf5", "#238b45"],
+    format: (v) => v.toFixed(1) + "%",
   },
 };
 
@@ -86,6 +167,17 @@ function buildAdmin1MatchExpression(countryData, provinceData, metric) {
   for (const [code, p] of provEntries)
     expr.push(code, metricColor(p[metric], domain, colors, log));
   expr.push(countryExpr);
+  return expr;
+}
+
+function buildAdmin2MatchExpression(countyData, metric) {
+  const { domain, colors, log } = METRICS[metric];
+  const expr = ["match", ["get", "fips"]];
+  for (const [fips, c] of Object.entries(countyData)) {
+    if (c[metric] != null)
+      expr.push(fips, metricColor(c[metric], domain, colors, log));
+  }
+  expr.push(NO_DATA_COLOR);
   return expr;
 }
 
@@ -205,32 +297,30 @@ function StatRow({ label, value }) {
 }
 
 function MetricRows({ data }) {
-  return Object.entries(METRICS).map(([key, { label, format }]) => {
-    const val = data?.[key];
-    return (
-      <div
-        key={key}
-        style={{
-          padding: "7px 0",
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            fontSize: 13,
-          }}
-        >
-          <span style={{ color: "#888" }}>{label}</span>
-          <span style={{ fontWeight: 500 }}>
-            {val != null ? format(val) : "—"}
-          </span>
-        </div>
-        {val != null && <StatBar value={val} metric={key} />}
+  const groups = [...new Set(Object.values(METRICS).map((m) => m.group))];
+  return groups.map((group) => (
+    <div key={group} style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 9, fontWeight: 700, color: "#3a3a5a", textTransform: "uppercase", letterSpacing: 1.1, marginBottom: 4 }}>
+        {group}
       </div>
-    );
-  });
+      {Object.entries(METRICS)
+        .filter(([, m]) => m.group === group)
+        .map(([key, { label, format }]) => {
+          const val = data?.[key];
+          return (
+            <div key={key} style={{ padding: "5px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                <span style={{ color: "#777" }}>{label}</span>
+                <span style={{ fontWeight: 500, color: val != null ? "#eee" : "#444" }}>
+                  {val != null ? format(val) : "—"}
+                </span>
+              </div>
+              {val != null && <StatBar value={val} metric={key} />}
+            </div>
+          );
+        })}
+    </div>
+  ));
 }
 
 function CompareSection({ title, compared, onRemove, referenceData }) {
@@ -492,7 +582,9 @@ function Panel({
             <Section title="Statistics">
               <MetricRows data={selected.provinceData ?? selected.countryData ?? countryDataMap?.[selected.adm0_a3]} />
               <div style={{ fontSize: 10, color: "#444", marginTop: 4 }}>
-                {selected.provinceData ? "BEA 2022 · State-level" : "World Bank · Country-level"}
+                {selected.provinceData
+                  ? isMunicipality ? "Census 2022 · County-level" : "BEA 2022 · State-level"
+                  : "World Bank · Country-level"}
               </div>
             </Section>
 
@@ -798,8 +890,10 @@ export default function App() {
   const briefingCacheRef = useRef({});
   const provinceBriefingCacheRef = useRef({});
   const provinceDataRef = useRef({});
+  const countyDataRef = useRef({});
 
   const [metric, setMetric] = useState("gdp_per_capita");
+  const metricRef = useRef("gdp_per_capita");
   const [countryDataMap, setCountryDataMap] = useState({});
   const [selectedStack, setSelectedStack] = useState([]);
   const [compared, setCompared] = useState([]);
@@ -821,16 +915,11 @@ export default function App() {
   const applyMetric = useCallback((m) => {
     if (!mapLoaded.current || !Object.keys(countryDataRef.current).length)
       return;
-    mapInstance.current.setPaintProperty(
-      "country-fills",
-      "fill-color",
-      buildMatchExpression(countryDataRef.current, m),
-    );
-    mapInstance.current.setPaintProperty(
-      "admin1-fills",
-      "fill-color",
-      buildAdmin1MatchExpression(countryDataRef.current, provinceDataRef.current, m),
-    );
+    const map = mapInstance.current;
+    map.setPaintProperty("country-fills", "fill-color", buildMatchExpression(countryDataRef.current, m));
+    map.setPaintProperty("admin1-fills", "fill-color", buildAdmin1MatchExpression(countryDataRef.current, provinceDataRef.current, m));
+    if (Object.keys(countyDataRef.current).length)
+      map.setPaintProperty("admin2-fills", "fill-color", buildAdmin2MatchExpression(countyDataRef.current, m));
   }, []);
 
   const clearFocus = useCallback(() => {
@@ -942,7 +1031,7 @@ export default function App() {
         FOCUSED_PROV_ZOOM,
         0,
         FOCUSED_PROV_ZOOM + 1,
-        0.001,
+        0.7,
       ]);
     } else {
       map.setFilter("admin1-dim", ["==", ["get", "adm0_a3"], "__none__"]);
@@ -954,7 +1043,7 @@ export default function App() {
         ADMIN2_ZOOM - 0.5,
         0,
         ADMIN2_ZOOM + 0.5,
-        0.001,
+        0.7,
       ]);
     }
   }, [focusedProvince]);
@@ -1021,6 +1110,7 @@ export default function App() {
   }, [clearFocus]);
 
   useEffect(() => {
+    metricRef.current = metric;
     applyMetric(metric);
   }, [metric, applyMetric]);
 
@@ -1049,6 +1139,14 @@ export default function App() {
       .then((r) => r.json())
       .then((data) => {
         provinceDataRef.current = data;
+        applyMetric(metric);
+      })
+      .catch(() => {});
+
+    fetch("/county-stats.json")
+      .then((r) => r.json())
+      .then((data) => {
+        countyDataRef.current = data;
         applyMetric(metric);
       })
       .catch(() => {});
@@ -1205,7 +1303,7 @@ export default function App() {
         type: "fill",
         source: "admin2",
         paint: {
-          "fill-color": "#ffffff",
+          "fill-color": NO_DATA_COLOR,
           "fill-opacity": [
             "interpolate",
             ["linear"],
@@ -1213,7 +1311,7 @@ export default function App() {
             ADMIN2_ZOOM - 0.5,
             0,
             ADMIN2_ZOOM + 0.5,
-            0.001,
+            0.7,
           ],
         },
       });
@@ -1378,14 +1476,14 @@ export default function App() {
         const a2 = a2Feats[0];
         if (a2 && zoom >= ADMIN2_ZOOM) {
           const p = a2.properties;
+          const cStat = countyDataRef.current[p.fips];
+          const { label, format } = METRICS[metricRef.current];
+          const val = cStat?.[metricRef.current];
           map.getCanvas().style.cursor = "pointer";
           showTooltip(e, [
             { text: p.name_en || p.name, style: "font-weight:700" },
-            {
-              text: (p.region || "") + " · " + (p.admin || ""),
-              style: "color:#aaa;font-size:11px",
-            },
-            { text: p.type_en || "County", style: "color:#555;font-size:11px" },
+            { text: (p.region || "") + " · County", style: "color:#aaa;font-size:11px" },
+            { text: `${label}: ${val != null ? format(val) : "—"}`, style: "color:#ccc;font-size:11px" },
           ]);
           clearHovCountry();
           clearHovAdmin1();
@@ -1408,14 +1506,14 @@ export default function App() {
           const threshold = isFocused ? FOCUSED_PROV_ZOOM : ADMIN1_ZOOM;
           if (zoom >= threshold) {
             const p = a1.properties;
+            const pStat = provinceDataRef.current[p.adm1_code];
+            const { label, format } = METRICS[metricRef.current];
+            const val = pStat?.[metricRef.current] ?? countryDataRef.current[p.adm0_a3]?.[metricRef.current];
             map.getCanvas().style.cursor = "pointer";
             showTooltip(e, [
               { text: p.name_en || p.name, style: "font-weight:700" },
               { text: p.admin || "", style: "color:#aaa;font-size:11px" },
-              {
-                text: p.type_en || "Region",
-                style: "color:#555;font-size:11px",
-              },
+              { text: `${label}: ${val != null ? format(val) : "—"}`, style: "color:#ccc;font-size:11px" },
             ]);
             clearHovCountry();
             if (hId1 !== a1.id) {
@@ -1436,12 +1534,12 @@ export default function App() {
         if (ct && zoom < ADMIN1_ZOOM) {
           const iso = ct.properties.iso_3166_1_alpha_3;
           const d = countryDataRef.current[iso];
+          const { label, format } = METRICS[metricRef.current];
+          const val = d?.[metricRef.current];
           map.getCanvas().style.cursor = "pointer";
           showTooltip(e, [
             { text: ct.properties.name_en, style: "font-weight:700" },
-            ...Object.entries(METRICS).map(([key, { label, format }]) => ({
-              text: `${label}: ${d?.[key] != null ? format(d[key]) : "—"}`,
-            })),
+            { text: `${label}: ${val != null ? format(val) : "—"}`, style: "color:#ccc;font-size:11px" },
           ]);
           if (hIdC !== ct.id) {
             clearHovCountry();
@@ -1500,6 +1598,7 @@ export default function App() {
             stateName: p.region || "",
             code: p.adm2_code || p.fips,
             countryData: countryDataRef.current["USA"],
+            provinceData: countyDataRef.current[p.fips],
           });
           return;
         }
@@ -1586,37 +1685,35 @@ export default function App() {
 
       <SearchBar countryData={countryDataRef} onSelect={handleSearchSelect} />
 
-      {/* metric buttons */}
-      <div
-        style={{
-          position: "absolute",
-          top: 20,
-          left: "50%",
-          transform: "translateX(-50%)",
-          zIndex: 10,
-          display: "flex",
-          gap: 8,
-        }}
-      >
-        {Object.entries(METRICS).map(([key, { label }]) => (
-          <button
-            key={key}
-            onClick={() => setMetric(key)}
-            style={{
-              padding: "6px 16px",
-              borderRadius: 20,
-              border: "none",
-              cursor: "pointer",
-              background: metric === key ? "#fff" : "rgba(255,255,255,0.22)",
-              color: metric === key ? "#000" : "#fff",
-              fontWeight: metric === key ? 600 : 400,
-              fontSize: 13,
-              backdropFilter: "blur(4px)",
-            }}
-          >
-            {label}
-          </button>
-        ))}
+      {/* metric selector */}
+      <div style={{ position: "absolute", top: 20, left: "50%", transform: "translateX(-50%)", zIndex: 10 }}>
+        <select
+          value={metric}
+          onChange={(e) => setMetric(e.target.value)}
+          style={{
+            padding: "7px 14px",
+            borderRadius: 20,
+            border: "none",
+            background: "rgba(0,0,0,0.7)",
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: 500,
+            backdropFilter: "blur(6px)",
+            cursor: "pointer",
+            outline: "none",
+            minWidth: 200,
+          }}
+        >
+          {[...new Set(Object.values(METRICS).map((m) => m.group))].map((group) => (
+            <optgroup key={group} label={group}>
+              {Object.entries(METRICS)
+                .filter(([, m]) => m.group === group)
+                .map(([key, { label }]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
+            </optgroup>
+          ))}
+        </select>
       </div>
 
       {/* legend */}
